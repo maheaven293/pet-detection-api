@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pet Filter Application</title>
+    <style>
+        * {margin: 0; padding: 0; box-sizing: border-box;}
+
+        body {font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; color: #333;}
+        .container {max-width: 1200px; margin: 0 auto; padding: 20px;}
+        .header {text-align: center; margin-bottom: 30px; color: white;}
+        .header h1 {font-size: 2.5rem; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);}
+        .header p {font-size: 1.1rem; opacity: 0.9;}
+        .main-content {display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px;}
+        .panel {background: rgba(255, 255, 255, 0.95); border-radius: 20px; padding: 25px; box-shadow: 0 15px 35px rgba(0,0,0,0.1); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2);}
+        .panel h2 {color: #4a5568; margin-bottom: 20px; font-size: 1.5rem; text-align: center;}
+        .video-container {position: relative; width: 100%; height: 300px; border-radius: 15px; overflow: hidden; background: #000; margin-bottom: 20px;}
+        #videoElement {width: 100%; height: 100%; object-fit: cover;}
+        #detectionCanvas {position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;}
+        .image-display {width: 100%; height: 300px; border-radius: 15px; background: #f7fafc; display: flex; align-items: center; justify-content: center; margin-bottom: 20px; border: 2px dashed #cbd5e0; position: relative; overflow: hidden;}
+        .image-display img {max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px;}
+        .image-display .placeholder {color: #a0aec0; text-align: center; font-size: 1.1rem;}
+        .controls {display: flex; flex-direction: column; gap: 15px;}
+        .button-group {display: flex; gap: 10px; flex-wrap: wrap;}
+        .btn {padding: 12px 24px; border: none; border-radius: 25px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; text-transform: uppercase; letter-spacing: 0.5px; flex: 1; min-width: 120px;}
+        .btn-primary {background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;}
+        .btn-primary:hover {transform: translateY(-2px); box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);}
+        .btn-secondary {background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;}
+        .btn-secondary:hover {transform: translateY(-2px); box-shadow: 0 8px 20px rgba(245, 87, 108, 0.4);}
+        .btn-success {background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;}
+        .btn-success:hover {transform: translateY(-2px); box-shadow: 0 8px 20px rgba(79, 172, 254, 0.4);}
+        .btn:disabled {opacity: 0.6; cursor: not-allowed; transform: none !important;}
+        .filter-section {margin-top: 20px;}
+        .filter-select {width: 100%; padding: 12px 15px; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 1rem; margin-bottom: 15px; background: white; transition: border-color 0.3s ease;}
+        .filter-select:focus {outline: none; border-color: #667eea;}
+        .status-display {background: #f7fafc; border-radius: 10px; padding: 15px; margin-bottom: 15px; border-left: 4px solid #4299e1;}
+        .status-display h3 {color: #2d3748; margin-bottom: 8px;}
+        .status-display p {color: #4a5568; margin: 5px 0;}
+        .loading {display: none; text-align: center; padding: 20px; color: #667eea;}
+        .loading.active {display: block;}
+        .spinner {border: 3px solid rgba(102, 126, 234, 0.3); border-radius: 50%; border-top: 3px solid #667eea; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 10px;}
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .detection-info {background: rgba(102, 126, 234, 0.1); border-radius: 8px; padding: 10px; margin-top: 10px; font-size: 0.9rem;}
+        .bbox-overlay {position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;}
+
+        @media (max-width: 768px) {
+            .main-content {grid-template-columns: 1fr; gap: 20px;}
+            .header h1 {font-size: 2rem;}
+            .button-group {flex-direction: column;}
+            .btn {min-width: auto;}
+        }
+        .error-message {background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 12px; color: #dc2626; margin-bottom: 15px; display: none;}
+        .error-message.active {display: block;}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🐾 Pet Filter App</h1>
+            <p>Capture your pet and apply amazing filters!</p>
+        </div>
+
+        <div class="main-content">
+            <!-- Live Detection Panel -->
+            <div class="panel">
+                <h2>📹 Live Detection</h2>
+                <div class="video-container">
+                    <video id="videoElement" autoplay muted playsinline></video>
+                    <canvas id="detectionCanvas"></canvas>
+                </div>
+                
+                <div class="controls">
+                    <div class="button-group">
+                        <button id="captureBtn" class="btn btn-primary">📸 Capture Pet</button>
+                        <button id="resetBtn" class="btn btn-secondary">🔄 Reset</button>
+                    </div>
+                </div>
+
+                <div class="status-display">
+                    <h3>Detection Status</h3>
+                    <p id="detectionStatus">Starting camera...</p>
+                    <p id="petCount">Pets detected: 0</p>
+                    <div id="detectionInfo" class="detection-info"></div>
+                </div>
+            </div>
+            <!-- Captured Pet Panel -->
+            <div class="panel">
+                <h2>🎯 Captured Pet</h2>
+                <div class="image-display" id="capturedImageContainer">
+                    <div class="placeholder" id="capturedPlaceholder">
+                        <p>No pet captured yet</p>
+                        <p style="font-size: 0.9rem; margin-top: 5px;">Click "Capture Pet" to get started</p>
+                    </div>
+                    <img id="capturedImage" style="display: none;" alt="Captured Pet">
+                    <canvas id="capturedBboxCanvas" class="bbox-overlay"></canvas>
+                </div>
+
+                <div class="loading" id="captureLoading">
+                    <div class="spinner"></div>
+                    <p>Capturing and processing pet...</p>
+                </div>
+
+                <div class="error-message" id="captureError"></div>
+
+                <div class="status-display" id="captureStatus" style="display: none;">
+                    <h3>Capture Details</h3>
+                    <p id="capturedPetType">Pet Type: Unknown</p>
+                    <p id="captureConfidence">Confidence: 0%</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Panel -->
+        <div class="panel">
+            <h2>🎨 Apply Filters</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                <div>
+                    <div class="filter-section">
+                        <select id="filterSelect" class="filter-select">
+                            <option value="">Select a filter...</option>
+                            <option value="vintage">📸 Vintage</option>
+                            <option value="blur">🌫️ Blur</option>
+                            <option value="sharpen">⚡ Sharpen</option>
+                            <option value="sepia">🟤 Sepia</option>
+                            <option value="bright">☀️ Bright</option>
+                            <option value="dark">🌙 Dark</option>
+                        </select>
+                        
+                        <div class="button-group">
+                            <button id="applyFilterBtn" class="btn btn-success" disabled>✨ Apply Filter</button>
+                        </div>
+                    </div>
+
+                    <div class="loading" id="filterLoading">
+                        <div class="spinner"></div>
+                        <p>Applying filter...</p>
+                    </div>
+
+                    <div class="error-message" id="filterError"></div>
+                </div>
+                
+                <div>
+                    <div class="overlay-section" style="margin-top: 20px;">
+                        <h3>🎭 Pet Overlays</h3>
+                        <select id="overlaySelect" class="filter-select">
+                            <option value="">Select an overlay...</option>
+                            <option value="sunglasses">🕶️ Sunglasses</option>
+                            <option value="party_hat">🎉 Party Hat</option>
+                            <option value="bow_tie">🎀 Bow Tie</option>
+                        </select>
+                        
+                        <div class="button-group">
+                            <button id="applyOverlayBtn" class="btn btn-success" disabled>✨ Apply Overlay</button>
+                        </div>
+                        
+                        <div class="loading" id="overlayLoading">
+                            <div class="spinner"></div>
+                            <p>Applying overlay...</p>
+                        </div>
+                        
+                        <div class="error-message" id="overlayError"></div>
+                    </div>
+                </div>
+                
+                <div>
+                    <div style="margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
+                        <h3>🎨 + 🎭 Combined Effects</h3>
+                        <p style="font-size: 0.9rem; color: #666; margin-bottom: 15px;">
+                            Apply filter and overlay together
+                        </p>
+                        <div class="button-group">
+                            <button id="applyBothBtn" class="btn btn-success" disabled>✨ Apply Filter + Overlay</button>
+                        </div>
+                        
+                        <div class="loading" id="combinedLoading">
+                            <div class="spinner"></div>
+                            <p>Applying combined effects...</p>
+                        </div>
+                        
+                        <div class="error-message" id="combinedError"></div>
+                    </div>                    
+                </div>
+                
+                <div>
+                    <div class="image-display" id="overlayImageContainer">
+                        <div class="placeholder" id="overlayPlaceholder">
+                            <p>Overlay result will appear here</p>
+                        </div>
+                        <img id="overlayImage" style="display: none;" alt="Overlay Result">
+                    </div>                    
+                </div>
+                
+                <div>
+                    <div class="image-display" id="filteredImageContainer">
+                        <div class="placeholder" id="filteredPlaceholder">
+                            <p>Filtered image will appear here</p>
+                            <p style="font-size: 0.9rem; margin-top: 5px;">Capture a pet and apply a filter</p>
+                        </div>
+                        <img id="filteredImage" style="display: none;" alt="Filtered Pet">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class PetFilterApp {
+            constructor() {
+                // Configuration - Auto-detect API URL
+                this.API_BASE_URL = this.detectApiUrl();
+                this.POLL_INTERVAL = 1000; // 1 second
+                this.DETECTION_INTERVAL = 800; // Slower for Raspberry Pi
+                // State
+                this.isCapturing = false;
+                this.isFiltering = false;
+                this.capturedImageData = null;
+                this.capturedPetType = null;
+                this.detectionActive = false;
+                this.isOverlaying = false;
+                this.currentPollingInterval = null;
+                // DOM elements - using array for easier element selection
+                const elementMappings = [['video', 'videoElement'], ['detectionCanvas', 'detectionCanvas'], ['captureBtn', 'captureBtn'], ['resetBtn', 'resetBtn'], ['applyFilterBtn', 'applyFilterBtn'], ['filterSelect', 'filterSelect'], ['capturedImage', 'capturedImage'], ['capturedPlaceholder', 'capturedPlaceholder'], ['capturedBboxCanvas', 'capturedBboxCanvas'], ['captureLoading', 'captureLoading'], ['captureError', 'captureError'], ['captureStatus', 'captureStatus'], ['filteredImage', 'filteredImage'], ['filteredPlaceholder', 'filteredPlaceholder'], ['filterLoading', 'filterLoading'], ['filterError', 'filterError'], ['detectionStatus', 'detectionStatus'], ['petCount', 'petCount'], ['detectionInfo', 'detectionInfo'], ['capturedPetType', 'capturedPetType'], ['captureConfidence', 'captureConfidence'], ['overlaySelect', 'overlaySelect'], ['applyOverlayBtn', 'applyOverlayBtn'], ['overlayLoading', 'overlayLoading'], ['overlayError', 'overlayError'], ['applyBothBtn', 'applyBothBtn'], ['combinedLoading', 'combinedLoading'], ['combinedError', 'combinedError'], ['overlayImage', 'overlayImage'], ['overlayPlaceholder', 'overlayPlaceholder']];
+                this.elements = {};
+                elementMappings.forEach(([key, id]) => {this.elements[key] = document.getElementById(id);});
+                this.init();
+            }
+            detectApiUrl() {
+                const currentUrl = window.location.origin;
+                // Check if we're on a Cloudflare Tunnel URL
+                if (currentUrl.includes('trycloudflare.com')) {
+                    console.log('Detected Cloudflare Tunnel URL:', currentUrl);
+                    return currentUrl;
+                }
+                // Fallback for local development
+                if (currentUrl.includes('localhost') || currentUrl.includes('127.0.0.1')) {
+                    return 'http://localhost:5000';
+                }
+                // Default to same origin
+                return currentUrl;
+            }
+            async init() {
+                try {
+                    await this.setupCamera();
+                    this.setupCanvas();
+                    this.setupEventListeners();
+                    this.startDetection();
+                    this.updateDetectionStatus('Camera ready - detecting pets...');
+                } catch (error) {
+                    console.error('Initialization error:', error);
+                    this.showError('captureError', 'Failed to initialize camera. Please check permissions.');
+                }
+            }
+            async setupCamera() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { 
+                            width: { ideal: 640 }, 
+                            height: { ideal: 480 },
+                            facingMode: 'environment'
+                        }
+                    });
+                    
+                    this.elements.video.srcObject = stream;
+                    
+                    return new Promise((resolve) => {
+                        this.elements.video.onloadedmetadata = () => {
+                            resolve();
+                        };
+                    });
+                } catch (error) {
+                    console.error('Camera error:', error);
+                    this.showError('captureError', 'Camera access denied. Please ensure you\'re using HTTPS and have granted camera permissions.');
+                    throw new Error('Camera access denied or unavailable');
+                }
+            }
+            setupCanvas() {
+                const video = this.elements.video;
+                const canvas = this.elements.detectionCanvas;
+                const ctx = canvas.getContext('2d');
+                // Set canvas size to match video
+                const resizeCanvas = () => {
+                    canvas.width = video.offsetWidth;
+                    canvas.height = video.offsetHeight;
+                };
+                video.addEventListener('loadedmetadata', resizeCanvas);
+                window.addEventListener('resize', resizeCanvas);
+                resizeCanvas();
+            }
+            setupEventListeners() {
+                const eventMappings = [['captureBtn', 'click', () => this.captureCurrentFrame()], ['resetBtn', 'click', () => this.resetCapture()], ['applyFilterBtn', 'click', () => this.applyFilter()], ['filterSelect', 'change', () => { this.elements.applyFilterBtn.disabled = !this.elements.filterSelect.value || !this.capturedImageData; this.updateApplyBothButton();}], ['applyOverlayBtn', 'click', () => this.applyOverlay()], ['overlaySelect', 'change', () => {this.elements.applyOverlayBtn.disabled = !this.elements.overlaySelect.value || !this.capturedImageData; this.updateApplyBothButton();}], ['applyBothBtn', 'click', () => this.applyBoth()]];
+                
+                eventMappings.forEach(([element, event, handler]) => {this.elements[element].addEventListener(event, handler);});
+            }
+            startDetection() {
+                this.detectionActive = true;
+                this.detectPets();
+            }
+            async detectPets() {
+                if (!this.detectionActive || this.isCapturing) return;
+
+                try {
+                    const imageData = this.captureVideoFrame();
+                    if (!imageData) return;
+
+                    const response = await fetch(`${this.API_BASE_URL}/detect_objects`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image: imageData })
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        this.updateDetectionDisplay(data);
+                    }
+                } catch (error) {
+                    console.error('Detection error:', error);
+                } finally {
+                    if (this.detectionActive) {
+                        setTimeout(() => this.detectPets(), this.DETECTION_INTERVAL);
+                    }
+                }
+            }
+            captureVideoFrame() {
+                const video = this.elements.video;
+                if (video.readyState !== video.HAVE_ENOUGH_DATA) return null;
+
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0);
+                
+                return canvas.toDataURL('image/jpeg', 0.8);
+            }
+            updateDetectionDisplay(data) {
+                const canvas = this.elements.detectionCanvas;
+                const ctx = canvas.getContext('2d');
+                const video = this.elements.video;
+                // Clear canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // Update status
+                this.elements.petCount.textContent = `Pets detected: ${data.count || 0}`;
+                
+                if (data.boxes && data.boxes.length > 0) {
+                    // Draw bounding boxes
+                    ctx.strokeStyle = '#4299e1';
+                    ctx.lineWidth = 3;
+                    ctx.fillStyle = 'rgba(66, 153, 225, 0.3)';
+                    // Scale from backend coordinates to display coordinates
+                    const scaleX = canvas.width / video.videoWidth;
+                    const scaleY = canvas.height / video.videoHeight;
+                    data.boxes.forEach(box => {
+                        const [x1, y1, x2, y2] = box.bbox;
+                        // Apply correct scaling
+                        const scaleX = canvas.width / video.videoWidth;
+                        const scaleY = canvas.height / video.videoHeight;                        
+                        const scaledX1 = x1 * scaleX;
+                        const scaledY1 = y1 * scaleY;
+                        const scaledX2 = x2 * scaleX;
+                        const scaledY2 = y2 * scaleY;
+                        // Draw rectangle
+                        ctx.fillRect(scaledX1, scaledY1, scaledX2 - scaledX1, scaledY2 - scaledY1);
+                        ctx.strokeRect(scaledX1, scaledY1, scaledX2 - scaledX1, scaledY2 - scaledY1);
+                        // Draw label
+                        ctx.fillStyle = '#4299e1';
+                        ctx.font = '16px Arial';
+                        const label = `${box.class_name} (${Math.round(box.confidence * 100)}%)`;
+                        ctx.fillText(label, scaledX1, scaledY1 - 5);
+                        ctx.fillStyle = 'rgba(66, 153, 225, 0.3)';
+                    });
+                    // Update detection info
+                    const infoText = data.boxes.map(box => 
+                        `${box.class_name}: ${Math.round(box.confidence * 100)}%`
+                    ).join(', ');
+                    this.elements.detectionInfo.textContent = infoText;
+                    this.updateDetectionStatus(`Detecting ${data.count} pet(s) - Ready to capture!`);
+                    this.elements.captureBtn.disabled = false;
+                } else {
+                    this.elements.detectionInfo.textContent = 'No pets detected';
+                    this.updateDetectionStatus('No pets detected - Position your pet in view');
+                    this.elements.captureBtn.disabled = true;
+                }
+            }
+            async detectLandmarks() {
+                try {
+                    const imageData = this.captureVideoFrame();
+                    if (!imageData) return;
+
+                    const response = await fetch(`${this.API_BASE_URL}/detect_landmarks`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image: imageData })
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.status === 'processing') {
+                            this.pollTaskStatus(data.task_id, 'landmarks');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Landmark detection error:', error);
+                }
+            }
+            async captureCurrentFrame() {
+                if (this.isCapturing) return;
+                this.isCapturing = true;
+                this.showLoading('captureLoading');
+                this.hideError('captureError');
+                try {
+                    const imageData = this.captureVideoFrame();
+                    if (!imageData) {
+                        throw new Error('Failed to capture video frame');
+                    }
+
+                    const response = await fetch(`${this.API_BASE_URL}/auto_capture`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image: imageData })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Capture request failed');
+                    }
+                    const data = await response.json();
+                    
+                    if (data.status === 'processing') {
+                        this.pollTaskStatus(data.task_id, 'capture');
+                    } else {
+                        throw new Error('Unexpected response format');
+                    }
+                } catch (error) {
+                    console.error('Capture error:', error);
+                    this.showError('captureError', 'Failed to capture pet. Please try again.');
+                    this.hideLoading('captureLoading');
+                    this.isCapturing = false;
+                }
+            }
+            async applyOverlay() {
+                if (this.isOverlaying || !this.capturedImageData || !this.elements.overlaySelect.value) return;
+                
+                this.isOverlaying = true;
+                this.showLoading('overlayLoading');
+                this.hideError('overlayError');
+                
+                let retryCount = 0;
+                const maxRetries = 2;
+                
+                const attemptOverlay = async () => {
+                    try {
+                        const response = await fetch(`${this.API_BASE_URL}/apply_overlay`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                image: this.capturedImageData,
+                                overlay_type: this.elements.overlaySelect.value
+                            })
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error('Overlay request failed');
+                        }
+                        
+                        const data = await response.json();
+                        
+                        if (data.status === 'processing') {
+                            this.pollTaskStatus(data.task_id, 'overlay');
+                        } else {
+                            throw new Error('Unexpected response format');
+                        }
+                    } catch (error) {
+                        console.error('Overlay error:', error);
+                        if (retryCount < maxRetries) {
+                            retryCount++;
+                            console.log(`Retrying overlay (attempt ${retryCount + 1})...`);
+                            setTimeout(attemptOverlay, 1000);
+                        } else {
+                            this.showError('overlayError', 'Failed to apply overlay. Please try again.');
+                            this.hideLoading('overlayLoading');
+                            this.isOverlaying = false;
+                        }
+                    }
+                };
+                
+                await attemptOverlay();
+            }            
+            async applyBoth() {
+                if (!this.capturedImageData || (!this.elements.filterSelect.value && !this.elements.overlaySelect.value)) return;
+                
+                this.showLoading('combinedLoading');
+                this.hideError('combinedError');
+                
+                try {
+                    const response = await fetch(`${this.API_BASE_URL}/apply_both`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            image: this.capturedImageData,
+                            pet_type: this.capturedPetType,
+                            filter_name: this.elements.filterSelect.value || null,
+                            overlay_type: this.elements.overlaySelect.value || null
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.error || 'Combined application failed');
+                    }
+                    
+                    if (data.status === 'success') {
+                        this.elements.filteredImage.src = `${this.API_BASE_URL}${data.image_url}`;
+                        this.elements.filteredImage.style.display = 'block';
+                        this.elements.filteredPlaceholder.style.display = 'none';
+                        
+                        // Update status with what was applied
+                        let statusMsg = 'Applied: ';
+                        if (data.filter_applied) statusMsg += `${data.filter_applied} filter`;
+                        if (data.filter_applied && data.overlay_applied) statusMsg += ' + ';
+                        if (data.overlay_applied) statusMsg += `${data.overlay_applied} overlay`;
+                        
+                        this.updateDetectionStatus(statusMsg + '!');
+                        
+                        // Show download button if you have one
+                        const downloadBtn = document.getElementById('downloadFilteredBtn');
+                        if (downloadBtn) downloadBtn.style.display = 'inline-block';
+                    }
+                    
+                } catch (error) {
+                    console.error('Apply both error:', error);
+                    this.showError('combinedError', error.message || 'Failed to apply effects. Please try again.');
+                } finally {
+                    this.hideLoading('combinedLoading');
+                }
+            }                        
+            async pollTaskStatus(taskId, taskType) {
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const response = await fetch(`${this.API_BASE_URL}/get_task_status/${taskId}`);
+                        
+                        if (!response.ok) {
+                            throw new Error('Failed to get task status');
+                        }
+
+                        const data = await response.json();
+                        
+                        if (data.status === 'completed') {
+                            clearInterval(pollInterval);
+                            
+                            if (taskType === 'capture') {
+                                this.handleCaptureComplete(data.result);
+                            } else if (taskType === 'filter') {
+                                this.handleFilterComplete(data.result);
+                            } else if (taskType === 'overlay') {
+                                this.handleOverlayComplete(data.result);
+                            } else if (taskType === 'landmarks') {
+                                this.handleLandmarksComplete(data.result);
+                            }
+                        } else if (data.status === 'error') {
+                            clearInterval(pollInterval);
+                            const errorMsg = data.error || 'Unknown error occurred';
+                            
+                            if (taskType === 'capture') {
+                                this.showError('captureError', errorMsg);
+                                this.hideLoading('captureLoading');
+                                this.isCapturing = false;
+                            } else if (taskType === 'filter') {
+                                this.showError('filterError', errorMsg);
+                                this.hideLoading('filterLoading');
+                                this.isFiltering = false;
+                            } else if (taskType === 'landmarks') {
+                                this.showError('captureError', 'Landmark detection failed');
+                            } else if (taskType === 'overlay') {
+                                this.showError('overlayError', 'Failed to process overlay');
+                                this.hideLoading('overlayLoading');
+                                this.isOverlaying = false;
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Polling error:', error);
+                        clearInterval(pollInterval);
+                        
+                        if (taskType === 'capture') {
+                            this.showError('captureError', 'Failed to process capture');
+                            this.hideLoading('captureLoading');
+                            this.isCapturing = false;
+                        } else if (taskType === 'filter') {
+                            this.showError('filterError', 'Failed to process filter');
+                            this.hideLoading('filterLoading');
+                            this.isFiltering = false;
+                        } else if (taskType === 'landmarks') {
+                            this.showError('captureError', 'Landmark detection failed');
+                        }
+                    }
+                }, this.POLL_INTERVAL);
+            }
+            handleCaptureComplete(result) {(this.hideLoading('captureLoading'), this.isCapturing = false, this.capturedImageData = result.captured_image, this.capturedPetType = result.pet_type, this.elements.capturedImage.src = result.captured_image, this.elements.capturedImage.style.display = 'block', this.elements.capturedPlaceholder.style.display = 'none', this.elements.captureStatus.style.display = 'block', this.elements.capturedPetType.textContent = `Pet Type: ${result.pet_type}`, this.elements.captureConfidence.textContent = `Confidence: ${Math.round(result.confidence * 100)}%`, this.elements.applyFilterBtn.disabled = !this.elements.filterSelect.value, this.updateDetectionStatus(`${result.pet_type} captured successfully!`), this.elements.applyOverlayBtn.disabled = !this.elements.overlaySelect.value); this.updateApplyBothButton();}
+            async applyFilter() {
+                if (this.isFiltering || !this.capturedImageData || !this.elements.filterSelect.value) return;
+                this.isFiltering = true;
+                this.showLoading('filterLoading');
+                this.hideError('filterError');
+                                
+                try {
+                    const response = await fetch(`${this.API_BASE_URL}/apply_filter`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            image: this.capturedImageData,
+                            pet_type: this.capturedPetType,
+                            filter_name: this.elements.filterSelect.value
+                        })
+                    });
+                    if (!response.ok) {
+                        throw new Error('Filter request failed');
+                    }
+                    const data = await response.json();
+                    
+                    if (data.status === 'processing') {
+                        this.pollTaskStatus(data.task_id, 'filter');
+                    } else {
+                        throw new Error('Unexpected response format');
+                    }
+                } catch (error) {
+                    console.error('Filter error:', error);
+                    this.showError('filterError', 'Failed to apply filter. Please try again.');
+                    this.hideLoading('filterLoading');
+                    this.isFiltering = false;
+                }
+            }
+            handleFilterComplete(result) {
+                this.hideLoading('filterLoading');
+                this.isFiltering = false;
+                this.elements.filteredImage.src = `${this.API_BASE_URL}${result.filtered_image_url}`;
+                this.elements.filteredImage.style.display = 'block';
+                this.elements.filteredPlaceholder.style.display = 'none';
+                this.updateDetectionStatus(`${result.filter_applied} filter applied to ${result.pet_type}!`);
+            }
+            handleLandmarksComplete(result) {
+                // Handle landmark detection results
+                console.log('Landmarks detected:', result);
+                // Update UI with landmark information
+                if (result.landmarks && result.landmarks.length > 0) {
+                    this.updateDetectionStatus(`Face landmarks detected: ${result.landmark_count} points`);
+                }
+            }
+            handleOverlayComplete(result) {
+                console.log('Overlay result:', result);
+                console.log('Overlay URL:', `${this.API_BASE_URL}${result.overlay_image_url}`);                
+                console.log('Overlay complete:', {
+                    landmarks: result.landmarks_detected,
+                    overlayType: result.overlay_applied,
+                    imageUrl: result.overlay_image_url
+                });
+                this.hideLoading('overlayLoading');
+                this.isOverlaying = false;
+                this.elements.overlayImage.src = `${this.API_BASE_URL}${result.overlay_image_url}`;
+                this.elements.overlayImage.style.display = 'block';
+                this.elements.overlayPlaceholder.style.display = 'none';
+                this.updateDetectionStatus(`${result.overlay_applied} overlay applied!`);
+            }            
+            async resetCapture() {
+                try {
+                    const response = await fetch(`${this.API_BASE_URL}/reset_capture`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    
+                    if (response.ok) {
+                        // Reset UI state
+                        this.capturedImageData = null;
+                        this.capturedPetType = null;
+                        // Group display operations
+                        const elementsToHide = ['capturedImage', 'filteredImage', 'captureStatus'];
+                        const elementsToShow = ['capturedPlaceholder', 'filteredPlaceholder'];
+                        const errorsToHide = ['captureError', 'filterError'];
+                        const loadingToHide = ['captureLoading', 'filterLoading'];
+                        elementsToHide.forEach(id => this.elements[id].style.display = 'none');
+                        elementsToShow.forEach(id => this.elements[id].style.display = 'block');
+                        errorsToHide.forEach(id => this.hideError(id));
+                        loadingToHide.forEach(id => this.hideLoading(id));
+                        // Reset controls
+                        this.elements.filterSelect.value = '';
+                        this.elements.applyFilterBtn.disabled = true;
+                        this.updateDetectionStatus('Reset complete - Ready to capture!');
+                        this.elements.overlaySelect.value = '';
+                        this.elements.applyOverlayBtn.disabled = true;
+                        this.hideError('overlayError');
+                        this.hideLoading('overlayLoading');
+                        this.elements.applyBothBtn.disabled = true;
+                        this.hideError('combinedError');
+                        this.hideLoading('combinedLoading');                        
+                    }
+                } catch (error) {
+                    console.error('Reset error:', error);
+                    this.showError('captureError', 'Failed to reset. Please refresh the page.');
+                }
+            }
+            updateApplyBothButton() {
+                // Enable if we have a captured image AND at least one effect selected
+                this.elements.applyBothBtn.disabled = !this.capturedImageData || 
+                    (!this.elements.filterSelect.value && !this.elements.overlaySelect.value);
+            }            
+            // Utility methods
+            updateDetectionStatus(message) {this.elements.detectionStatus.textContent = message;}
+            showLoading(elementId) {this.elements[elementId].classList.add('active');}
+            hideLoading(elementId) {this.elements[elementId].classList.remove('active');}
+            showError(elementId, message) {(this.elements[elementId].textContent = message,this.elements[elementId].classList.add('active'));}
+            hideError(elementId) {this.elements[elementId].classList.remove('active');}
+        }
+        // Initialize the application when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new PetFilterApp();
+        });
+    </script>
+</body>
+</html>
