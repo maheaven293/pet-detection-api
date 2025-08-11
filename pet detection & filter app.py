@@ -593,7 +593,7 @@ cleanup_thread.start()
 # Route statements
 @app.route('/')
 def index():
-    return render_template('indexv2.html')#'indexv2.html' or 'indexv3.html'
+    return render_template('index.html')
 
 @app.route('/favicon.ico')
 def favicon():
